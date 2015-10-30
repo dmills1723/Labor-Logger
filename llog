@@ -1,0 +1,457 @@
+#!/bin/bash
+ 
+#####################################################
+# Author: Daniel Mills                              #
+# 												                # 
+# Labor Logger                                      #
+#                                                   #
+# This utility handles the logging of               #
+# an employee's 'at-terminal' hours.                #
+# 												                #
+# Future implentations could include:               #
+#   - Option to add e-mail addresses to mail raw    #
+#     logs or invoices to.                          #
+#   - GTK stopwatch for current sesh added to       #
+#     toolbar when working.                         #
+#   - General GUI.                                  #
+#   - Taskbar integration.                          #
+#####################################################
+
+#####################################################
+# Licensing info:                                   #
+# Licensed under GNU GPL								    #
+# GNU how-to link: 										    # 
+# https://www.gnu.org/licenses/gpl-howto.en.html    # 
+# 																    #
+# Copyright 2015 Daniel Mills     					    #
+# 																    #
+# A copy of the GNU General Public License (2007)   #
+# has been bundled with this script by the name of  #
+# "LICENSE".    												 #
+#																	 #	
+# If you would like to contribute, this project     #
+# is hosted on GitHub at:                           #
+# https://github.com/dmills1723/Labor-Logger        #
+#####################################################
+
+
+#######################
+###### FUNCTIONS ######
+#######################
+# Prints synopsis of CLI options and arguments.
+usage() 
+{
+	echo -e "\nUSAGE: llog [<option>]\
+				\n[-s || --start] [-q || --quit ] \
+				\n[-e || --end  ] [-b || --break] \n"
+}
+
+
+# Reads environment variables from "./ENVVARS" file.
+# "./ENVVARS" should be located in same directory as
+# llog script, so '$path' can be '$filename'.
+load_envvars()
+{ 
+	USERNAME=$(	        grep USERNAME          $(dirname $0)/ENVVARS | cut -f2 -d\")
+	LABOR_LOG_FILE=$(   grep LABOR_LOG_FILE    $(dirname $0)/ENVVARS | cut -f2 -d\")
+	PERIOD_START_DATE=$(grep PERIOD_START_DATE $(dirname $0)/ENVVARS | cut -f2 -d\")
+	PERIOD_END_DATE=$(  grep PERIOD_END_DATE   $(dirname $0)/ENVVARS | cut -f2 -d\")
+	TAKING_BREAK=$(     grep TAKING_BREAK      $(dirname $0)/ENVVARS | cut -f2 -d\")
+	IS_WORKING=$(       grep IS_WORKING        $(dirname $0)/ENVVARS | cut -f2 -d\")
+	CLOCKED_IN=$(		  grep CLOCKED_IN        $(dirname $0)/ENVVARS | cut -f2 -d\")
+	CLOCKED_OUT=$(		  grep CLOCKED_OUT       $(dirname $0)/ENVVARS | cut -f2 -d\")
+	BREAK_STARTED=$(    grep BREAK_STARTED     $(dirname $0)/ENVVARS | cut -f2 -d\")
+	BREAK_LENGTH=$(	  grep BREAK_LENGTH      $(dirname $0)/ENVVARS | cut -f2 -d\")
+}
+
+
+# Removes line in "./ENVVARS" file corresponding to "key" and 
+# then appends a new key-value pair in the form "key='value'".
+set_envvars() 
+{
+	# Removes line in "./ENVVARS" file matching patter "$key".
+	#   "$key" will be the name of the ENVVAR.
+	sed -i "/$key/d" $(dirname $0)/ENVVARS
+	
+	# Appends new key-value pair to ENVVARS file.
+	echo "$key=\"$value\"" >> $(dirname $0)/ENVVARS
+	load_envvars
+}
+
+
+# Functions for command-line argument behaviors.
+clock_in() 
+{
+	# Case 1 - Initial clock-in. 
+	# Message is displayed confirming clock-in at time.
+	# "13:39 - Clocked in."
+if [[ "$IS_WORKING" = false && "$TAKING_BREAK" = false ]] ; then
+	# Greetings message.
+	# TODO : How can these lines be linewrapped. The \ and all 
+	######   trailing whitespace is supposed to be replaced by
+	######   a single space when \ is the last char of a line.
+	
+	echo -e "\nYou are a slave $(echo $USERNAME | cut -f1 -d' ')."
+	echo -e "Like everyone else you were born into bondage."
+	echo -e "Into a prison that you cannot taste or see or touch."
+	echo -e "A prison for your mind.\n"
+
+		
+	# Write to log file here.
+	# Append line to month's log. 
+	# "11:41 - Clocked in.
+	if [ -f "$LABOR_LOG_FILE" ] ; then
+		echo -e "\n------ $(date +"%A %p, %B %d") ------"  >> $LABOR_LOG_FILE
+		echo  "$(date +"%b %d %R") - Clocked in." >> $LABOR_LOG_FILE
+		
+		## Update envvars.
+		# User is now working.
+		key="IS_WORKING"
+		value="true"
+		set_envvars
+		
+		# Clock-in time* in seconds since 00:00:00 01/01/70 is recorded.
+		key="CLOCKED_IN"
+		value="$(date +"%s")"
+		set_envvars
+
+		# Break length is initialized to zero.
+		# This value will be summed as User takes breaks.
+		key="BREAK_LENGTH"
+		value="0"
+		set_envvars
+
+		# Print message to terminal "Clocked in at HH:MM [AM/PM]".
+		echo -e "Clocked in at $(date +"%I:%M %p.")\n"
+
+		# No log file exists (you aren't in a pay period).
+		# Create new file 
+	else 
+		echo -e "No log file exists. Yet...\n"
+	  
+		# Ask user if they want to enter a new pay period.
+		echo -n "Enter new pay-period, create log file and clock-in? [Y/N]  "
+		
+		# The 'echo ""' line prevents bash from advancing line for prompt.
+		read -r create_log
+		echo ""
+
+		if [[ "$create_log" = y || "$create_log" = Y ]] ; then
+			# Calls start_period method and writes a clock-in status to log.
+			start_period
+			echo -e "\n------ $(date +"%A %p, %B %d") ------" >> $LABOR_LOG_FILE
+			echo "$(date +"%b %d %R") - Clocked in." >> $LABOR_LOG_FILE
+			
+			# Update envvars.
+			key="IS_WORKING"
+			value="true"
+			set_envvars
+		
+			key="CLOCKED_IN"
+			value="$(date +"%s")"
+			set_envvars
+
+			key="BREAK_LENGTH"
+			value="0"
+			set_envvars
+		fi
+	fi	
+		
+# Case 2 - Returning from break.
+# Message is displayed to user informing of status. 
+elif [[ "$IS_WORKING" = true && "$TAKING_BREAK" = true ]] ; then
+		
+	# ENVVAR is updated so user is no longer taking break.
+	key="TAKING_BREAK"
+	value="false"
+	set_envvars
+	
+	# Calculates length of break to be set below in ENVVAR.
+	declare -i break_length
+	declare -i break_end_time
+	declare -i break_start_time=$BREAK_STARTED
+
+	break_end_time=$(date +"%s")
+	break_length=$(($break_end_time - $break_start_time))
+	
+	key="BREAK_LENGTH"
+	value=$((break_length + BREAK_LENGTH))
+	set_envvars
+
+	# Write to log "##:## - Returned from ##-minute break." 
+	echo -e "\nReturned from $(($break_length / 60))-minute break.\n"
+	echo "$(date +"%b %d %R") - Returned from $(($break_length / 60))-minute break." >> $LABOR_LOG_FILE
+		
+# Case 3 - Already locked in, not taking break.
+# Does nothing but echo a message to user. 
+elif [[ "$IS_WORKING" = true && "$TAKING_BREAK" = false ]] ; then
+	echo -e "\nAlready clocked in. \n"
+# Case 4 - Not clocked in, but taking a break.
+# This should be impossible.
+else 
+	echo "How the fuck are you even here?"
+fi
+}
+
+
+clock_out() 
+{
+	if [[ "$IS_WORKING" = true && "$TAKING_BREAK" = false ]] ; then
+		# ENVVAR is updated - IS_WORKING becomes false.
+		key="IS_WORKING"
+		value="false"
+		set_envvars
+
+		key="CLOCKED_OUT"
+		value="$(date +"%s")"
+		set_envvars
+
+		# Calculates length of work session.
+		# Stores hours, minutes, and seconds in variables.
+		declare -i session_hrs
+		declare -i session_sec
+		declare -i session_min
+		
+		session_hrs=$(((CLOCKED_OUT - CLOCKED_IN - BREAK_LENGTH)/3600))
+		session_sec=$(((CLOCKED_OUT - CLOCKED_IN - BREAK_LENGTH)%3600))
+		session_min=$((session_sec / 60))
+		
+		# To STDOUT.
+		echo -e "\nYou worked $session_hrs hrs and $session_min minutes."
+		echo -e "\nClocked out at $(date +"%R")." 
+		
+		# Appends time locked out to log file.
+		echo -e "$(date +"%b %d %R") - Clocked out.\n" >> $LABOR_LOG_FILE	
+		
+		# Prompt for message to write 
+		# The 'echo ""' line prevents bash from advancing line for prompt.
+		# TODO : Change to until loop.
+		# TODO : Can this while loop be changed to a "while-read-line" stucture?
+		append_message="Y"
+		count=0
+		while [[ $append_message = "Y" || $append_message = "y" ]]
+		do
+			echo -e "\nWhat task(s) did you work on today?"
+			read -r task_message
+			echo "-- $task_message" >> $LABOR_LOG_FILE
+
+			# TODO : Prevent this prompt from advancing lines.
+			echo -e "\nLog another task?"
+			read -r append_message 
+		done 
+
+		# Appends time worked to log file.
+		echo -e "\nTime Worked = $session_hrs:$(printf "%02d" $session_min)\n" >> $LABOR_LOG_FILE
+	
+	# User isn't allowed to clock out while on break.
+	elif [[ "$IS_WORKING" = true && "$TAKING_BREAK" = true ]] ; then 
+		echo -e "\nEnd your break before you clock out!\n"
+	# User isn't able to to clock out if not already clocked in.
+	else
+		echo -e "\nYou can't clock out if you're not even working\n"
+	fi	  
+
+}
+
+change_user()
+{
+	# TODO : Prompt and read for new username from user input.
+	# TODO : Don't allow user to change username if log isn't closed.
+	# TODO :	Do nothing and notify if new UN is same as old.
+	# TODO : Update environment variable for UN if valid string.
+	
+	# TODO : Implement access limitation with password protection. 
+	echo "TO-DO"
+}
+take_break() 
+{
+	# Standard use case.
+	# User must be working and not taking a break to take one. 
+	if [[ "$IS_WORKING" = true && "$TAKING_BREAK" = false ]] ; then	
+		echo -e "$(date +"%b %d %R") - Started break." >> $LABOR_LOG_FILE
+		echo -e "\nStarted break at $(date +"%R")\n"
+		
+		# Updates ENVVAR such that user is taking a break.
+		key="TAKING_BREAK"
+		value="true"
+		set_envvars
+		
+		# Updates ENVVAR containing the time in seconds since 00:00:00 01/01/70.
+		key="BREAK_STARTED"
+		value="$(date +"%s")"
+		set_envvars
+
+	# User not allowed to take two breaks. 
+	elif [[ "$IS_WORKING" = true && "$TAKING_BREAK" = true ]] ; then
+		echo -e "\nYou're already taking a break!\n"
+	# User can't take break if they're not working. 
+	else
+		echo -e "\nYou can't take a break if you're not already working!\n"
+	fi
+}
+
+
+list() 
+{
+	echo "TODO"	
+}
+
+
+# Must be not working to end period. 
+# Used to bill earlier than a period_end date.
+# Hours are calculated, log file is  
+end_period() 
+{
+	if [[ "$IS_WORKING" = false && "$TAKING_BREAK" = false ]] ; then
+		declare -i line_hour
+		declare -i line_mins
+		declare -i period_hour=0
+		declare -i period_mins=0
+		
+		# Calculate total period hours worked by summing session hours' fields.
+		while read line 
+		do
+			if [[ $line == *"Time Worked"* ]] ; then 
+				line_hour=$(echo $line | cut -f2 -d'=' | cut -f1 -d':' | sed 's/  */ /g')
+				line_mins=$(echo $line | cut -f2 -d'=' | cut -f2 -d':' | sed 's/  */ /g' | sed 's/^0*//')
+				(( period_hour += line_hour ))
+				(( period_mins += line_mins ))
+			fi
+		done < $LABOR_LOG_FILE	  
+	
+		# Variables are adjusted since period_mins can be > 60.	
+		(( period_hour += (period_mins / 60) ))
+		(( period_mins  = (period_mins % 60) ))
+
+		# Replaces empty field for total hours with total period hours.
+		sed -i "s/^Total Time.*$/Total Time: $period_hour:$(printf "%02d" $period_mins)/g" $LABOR_LOG_FILE
+
+	elif [ "$IS_WORKING" = true ] ; then
+		echo -e "\nClock out before you end pay period!\n"	
+	else
+		echo -e "\nHow the fuck did you get here?\n"	
+	fi
+}
+
+
+start_period() 
+{
+	# Sets PERIOD_START_DATE to current date in format yyyy-mm-dd.
+	key="PERIOD_START_DATE"
+	value="$(date +"%Y-%m-%d")"
+	set_envvars
+	
+	# Sets PERIOD_END_DATE to 15 if DOM is less than 15, and 30 otherwise.
+	key="PERIOD_END_DATE"
+	if [ "$(date +"%d")" -lt 15 ] ; then 
+		value="$(date +"%Y-%m-15")"
+		set_envvars	
+	else
+		# Accounting for fucked up Gregorian calendar. 
+		if [ $(date +"%m") = 4  ] || \
+		   [ $(date +"%m") = 6  ] || \
+		   [ $(date +"%m") = 9  ] || \
+		   [ $(date +"%m") = 11 ]
+		then 
+	 		# 30 day months.
+	   	value="$(date +"%Y-%m-30")"
+			set_envvars
+
+		elif [ "$(date +"%m")" = 2 ] ; then
+			# February
+			value="$(date +"%Y-%m-28")"
+			set_envvars
+
+		else
+			# 31 day months.
+			value="$(date +"%Y-%m-31")"
+			set_envvars
+
+		fi
+	fi
+	
+	# Sets LABOR_LOG_FILE ENVVAR
+	key="LABOR_LOG_FILE"
+	value="$(dirname $0)/$(date +"%b_%d")-$(echo $PERIOD_END_DATE | cut -f3 -d'-').log"
+	set_envvars
+
+	# Creates log file
+	# touch "$LABOR_LOG_FILE"
+	touch $LABOR_LOG_FILE
+
+
+	# Print header of new log file.
+	# Includes name, period start and end dates, hours worked.
+	# Hours worked is not printed, but a blank field is printed
+	#   so it can be easily updated with a search and replace
+	#   at the end of the period, when hours are finalized.
+	echo -e "User: $USERNAME"						  			  >> "$LABOR_LOG_FILE"
+	echo -e "Period: $PERIOD_START_DATE - $PERIOD_END_DATE" >> "$LABOR_LOG_FILE"
+	echo -e "Total Time: " 						              	  >> "$LABOR_LOG_FILE"
+}
+
+
+###################
+###### SETUP ######
+###################
+
+# Loads environment variables by calling function.
+ 
+load_envvars
+
+# Script must be run as root. 
+# Exits with error code if not root.
+# No real need for this to be enabled. 
+
+#if [ x"$(whoami)" != x"root" ] ; then
+#	echo "Error: Must be run as root."
+#	exit 1
+#fi
+
+# COMMAND LINE ARGUMENTS HANDLING 
+if [ x"$2" != x"" ]; then
+	echo -e "Error: Only one argument allowed."
+	usage
+	exit 1
+fi
+
+# If the script is run outside of the last saved pay period,
+#   the old period is closed, log file is written to accordingly,
+#   and a new period is started. 
+#if [ "$(date +"%Y%m%d")" -gt "$(echo $PERIOD_END_DATE | sed 's/-//g')" ] ; then
+#	end_period
+#exit
+#	start_period
+#fi
+
+###########################
+###### CLI ARGUMENTS ######
+###########################
+
+case $1 in
+	-s|--start)
+		clock_in
+		;;
+	-q|--quit)
+		clock_out
+		;;
+	-b|--break)
+		take_break
+		;;
+	-l|--list)
+		display
+		;;
+	-e|--end)
+		end_period
+		;;
+	-n|--new)
+		start_period
+ 		;;
+    *)
+		usage
+		;;
+esac
+
+#################
+###### END ######
+#################
