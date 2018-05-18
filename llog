@@ -18,26 +18,29 @@
 #####################################################
 
 #####################################################
+#																	 #	
 # Licensing info:                                   #
 # Licensed under GNU GPL								    #
 # GNU how-to link: 										    # 
 # https://www.gnu.org/licenses/gpl-howto.en.html    # 
 # 																    #
-# Copyright 2015 Daniel Mills     					    #
+# Copyright 2018 Daniel Mills     					    #
 # 																    #
 # A copy of the GNU General Public License (2007)   #
 # has been bundled with this script by the name of  #
-# "LICENSE".    												 #
+# "LICENSE.txt".												 #
 #																	 #	
 # If you would like to contribute, this project     #
 # is hosted on GitHub at:                           #
 # https://github.com/dmills1723/Labor-Logger        #
+#																	 #	
 #####################################################
 
 
-#######################
-###### FUNCTIONS ######
-#######################
+						#######################
+						###### FUNCTIONS ######
+						#######################
+
 # Prints synopsis of CLI options and arguments.
 usage() 
 {
@@ -86,11 +89,13 @@ clock_in()
 	# Message is displayed confirming clock-in at time.
 	# "13:39 - Clocked in."
 if [[ "$IS_WORKING" = false && "$TAKING_BREAK" = false ]] ; then
-	# Greetings message.
-	# TODO : How can these lines be linewrapped. The \ and all 
-	######   trailing whitespace is supposed to be replaced by
-	######   a single space when \ is the last char of a line.
 	
+	# Greetings message.
+	if [ x"$USERNAME" = x"" ] ; then
+		echo -e "\nYou are a slave, Neo."
+	else
+		echo -e "\nYou are a slave $(echo $USERNAME | cut -f1 -d' ')."
+	fi
 	echo -e "\nYou are a slave $(echo $USERNAME | cut -f1 -d' ')."
 	echo -e "Like everyone else you were born into bondage."
 	echo -e "Into a prison that you cannot taste or see or touch."
