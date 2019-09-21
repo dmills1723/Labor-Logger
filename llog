@@ -264,21 +264,12 @@ start_period()
 # Loads environment variables from "./ENVVARS".
 source ENVVARS
 
-# COMMAND LINE ARGUMENTS HANDLING 
+# Checks that only one argument given.
 if [ x"$2" != x"" ]; then
 	echo -e "Error: Only one argument allowed."
 	usage
 	exit 1
 fi
-
-# If the script is run outside of the last saved pay period,
-#   the old period is closed, log file is written to accordingly,
-#   and a new period is started. 
-#if [ "$(date +"%Y%m%d")" -gt "$(echo $PERIOD_END_DATE | sed 's/-//g')" ] ; then
-#	end_period
-#exit
-#	start_period
-#fi
 
 case $1 in
 	-s|--start)
@@ -289,9 +280,6 @@ case $1 in
 		;;
 	-b|--break)
 		take_break
-		;;
-	-l|--list)
-		display
 		;;
 	-e|--end)
 		end_period
